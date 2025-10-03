@@ -36,7 +36,7 @@ class simuAbstracto(ABC):
         """
         Carga la matriz del circuito.
 
-        :return: True si la carga fue exitosa, False en caso contrario
+        :return: True si la carga fue exitosa
         :rtype: bool
         """
         pass
@@ -48,7 +48,7 @@ class simuAbstracto(ABC):
 
         :param todos_ceros: Si el estado inicial debe ser |0...0>
         :type todos_ceros: bool
-        :return: True si la carga fue exitosa, False en caso contrario
+        :return: True si la carga fue exitosa
         :rtype: bool
         """
         pass
@@ -58,7 +58,7 @@ class simuAbstracto(ABC):
         """
         Calcula el estado de salida aplicando el circuito al estado de entrada.
 
-        :return: True si el cálculo fue exitoso, False en caso contrario
+        :return: True si el cálculo fue exitoso
         :rtype: bool
         """
         pass
@@ -168,12 +168,10 @@ class simuGPU(simuAbstracto):
 
     def qc_matrix_load(self):
         """
-        Loads a quantum operator matrix from the quantum circuit (qc) and assigns it
-        to `qc_matrix`. Prints a warning if the matrix is already loaded. If an exception
-        occurs during the process, the error is logged to the console.
+        Carga la matriz del circuito en la GPU
 
-        :raises Exception: If there is an error while converting the quantum circuit to a matrix operator.
-        :return: A boolean indicating whether the matrix was successfully loaded or not.
+        :raises Exception: si hay problemas cargando 
+        :return: carga OK
         :rtype: bool
         """
         result = False # no-OK
@@ -193,16 +191,12 @@ class simuGPU(simuAbstracto):
 
     def instate_matrix_load(self,todos_ceros=True):
         """
-        Load the initial state matrix for the quantum system. This method initializes
-        a quantum state matrix representing the system in state |0...0>. If the matrix
-        is already loaded, it raises an error message. It supports systems with one
-        or more qubits.
+        Carga la estado inicial de los qubits en la GPU
+        solo está soportao el estado |0...0>
 
-        :param todos_ceros: Indicates whether the initial state should be |0...0>.
-            Defaults to True.
+        :param todos_ceros: estado inicial |0...0>.  Default a True
         :type todos_ceros: bool
-        :return: Returns True if the state matrix was loaded successfully; otherwise,
-            returns False.
+        :return: carga OK
         :rtype: bool
         """
         result = False # no-OK
@@ -275,7 +269,7 @@ class simuGPUbajo(simuGPU):
         """
         Valida biblioteca CuPy, ejecuta una prueba simple, y realiza un benchmark liviano.
 
-        :return: True sii CuPy está disponible y funcionando
+        :return: True sii CuPy está funcionando
         :rtype: bool
         """
         raise NotImplementedError()
@@ -284,35 +278,27 @@ class simuGPUbajo(simuGPU):
         """
         Verifica si CuPy está instalado
 
-        :return: True sii CuPy está disponible y funcionando
+        :return: True sii CuPy está disponible
         :rtype: bool
         """
         raise NotImplementedError()
 
     def qc_matrix_load(self):
         """
-        Loads a quantum operator matrix from the quantum circuit (qc) and assigns it
-        to `qc_matrix`. Prints a warning if the matrix is already loaded. If an exception
-        occurs during the process, the error is logged to the console.
+        Carga la matriz del circuito.
 
-        :raises Exception: If there is an error while converting the quantum circuit to a matrix operator.
-        :return: A boolean indicating whether the matrix was successfully loaded or not.
+        :return: True si la carga fue exitosa
         :rtype: bool
         """
         raise NotImplementedError()
 
     def instate_matrix_load(self, todos_ceros=True):
         """
-        Load the initial state matrix for the quantum system. This method initializes
-        a quantum state matrix representing the system in state |0...0>. If the matrix
-        is already loaded, it raises an error message. It supports systems with one
-        or more qubits.
+        Carga la matriz del estado inicial del sistema cuántico.
 
-        :param todos_ceros: Indicates whether the initial state should be |0...0>.
-            Defaults to True.
+        :param todos_ceros: Si el estado inicial debe ser |0...0>
         :type todos_ceros: bool
-        :return: Returns True if the state matrix was loaded successfully; otherwise,
-            returns False.
+        :return: True si la carga fue exitosa
         :rtype: bool
         """
         raise NotImplementedError()
