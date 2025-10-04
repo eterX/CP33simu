@@ -11,6 +11,15 @@ except ImportError:
 except Exception:
     raise
 
+try:
+    import mpi4py
+    from mpi4py import MPI
+except ImportError:
+    print("WARN: mpi4py no está instalado")
+except Exception:
+    raise
+
+
 __all__ = ['simuGPU', 'simuGPUbajo', 'simuMPI']
 
 
@@ -35,6 +44,7 @@ class simuAbstracto(ABC):
         else:
             # print("WARN: ") ya sabe
             pass
+        print(f"INFO: **{cupy.__name__}** funciona bien, v{cupy.__version__}")
         self.qc = qc
         print(f"INFO: Simulador creado: {self.qc.name}")
         self.num_qubits = self.qc.num_qubits
@@ -45,54 +55,6 @@ class simuAbstracto(ABC):
         self.qc_matrix=None
         self.instate_matrix=None
         self.outstate_matrix=None
-
-    @abstractmethod
-    def qc_matrix_load(self):
-        """
-        Carga la matriz del circuito.
-
-        :return: True si la carga fue exitosa
-        :rtype: bool
-        """
-        pass
-
-    @abstractmethod
-    def instate_matrix_load(self, todos_ceros=True):
-        """
-        Carga la matriz del estado inicial del sistema cuántico.
-
-        :param todos_ceros: Si el estado inicial debe ser |0...0>
-        :type todos_ceros: bool
-        :return: True si la carga fue exitosa
-        :rtype: bool
-        """
-        pass
-
-    @abstractmethod
-    def outstate_calculate(self):
-        """
-        Calcula el estado de salida aplicando el circuito al estado de entrada.
-
-        :return: True si el cálculo fue exitoso
-        :rtype: bool
-        """
-        pass
-
-
-class simuGPU(simuAbstracto):
-    #
-    # Simulador del simulador de Qiskit, con GUP, cuentas de alto nivel (no kernels)
-    #
-    #
-    #
-    def __init__(self,qc: qk.QuantumCircuit):
-        """
-        Inicializa el simulador con un circuito cuántico ingresado
-
-        :param qc: circuito a simualr
-        :type qc: qk.QuantumCircuit
-        """
-        super().__init__(qc)
 
     def validate_cupy(self):
         """
@@ -163,6 +125,56 @@ class simuGPU(simuAbstracto):
             print(f"ERROR: falló la validación de CuPy:  cupy.random.rand() - > {e}")
             return False
         return True #todo bien
+
+
+    @abstractmethod
+    def qc_matrix_load(self):
+        """
+        Carga la matriz del circuito.
+
+        :return: True si la carga fue exitosa
+        :rtype: bool
+        """
+        pass
+
+    @abstractmethod
+    def instate_matrix_load(self, todos_ceros=True):
+        """
+        Carga la matriz del estado inicial del sistema cuántico.
+
+        :param todos_ceros: Si el estado inicial debe ser |0...0>
+        :type todos_ceros: bool
+        :return: True si la carga fue exitosa
+        :rtype: bool
+        """
+        pass
+
+    @abstractmethod
+    def outstate_calculate(self):
+        """
+        Calcula el estado de salida aplicando el circuito al estado de entrada.
+
+        :return: True si el cálculo fue exitoso
+        :rtype: bool
+        """
+        pass
+
+
+class simuGPU(simuAbstracto):
+    #
+    # Simulador del simulador de Qiskit, con GUP, cuentas de alto nivel (no kernels)
+    #
+    #
+    #
+    def __init__(self,qc: qk.QuantumCircuit):
+        """
+        Inicializa el simulador con un circuito cuántico ingresado
+
+        :param qc: circuito a simualr
+        :type qc: qk.QuantumCircuit
+        """
+        super().__init__(qc)
+
 
     def qc_matrix_load(self):
         """
@@ -326,14 +338,42 @@ class simuMPI(simuAbstracto):
         :type qc: qk.QuantumCircuit
         """
         super().__init__(qc)
+        if not "mpi4py" in globals():
+            raise ImportError("ERROR: no se encuentra mpi4py. ver https://mpi4py.readthedocs.io/en/stable/install.html")
         print(f"INFO: Simulador MPI creado: {self.qc.name}")
         print(f"INFO: Qbits  {self.num_qubits}")
 
-        # TODO: inicializar MPI
         self.mpi_rank = None
         self.mpi_size = None
         self.local_state_size = None
-        raise NotImplementedError()
+        self._mpi_dtype = None  # atributo privado para MPI datatype
+        #raise NotImplementedError()
+
+    @property
+    def MPI_dtype(self):
+        """
+        Getter: Retorna el tipo de dato MPI correspondiente a cupy_dtype
+
+        :return: Tipo de dato MPI
+        :rtype: MPI.Datatype
+        """
+        if self._mpi_dtype is None:
+            # TODO: implementar mapeo completo para otros tipos
+            if self.cupy_dtype == cupy.complex128:
+                self._mpi_dtype = MPI.COMPLEX
+            else:
+                raise NotImplementedError(f"Mapeo MPI para {self.cupy_dtype} no implementado")
+        return self._mpi_dtype
+
+    @MPI_dtype.setter
+    def MPI_dtype(self, value):
+        """
+        Setter: Asigna el tipo de dato MPI manualmente
+
+        :param value: Tipo de dato MPI
+        :type value: MPI.Datatype
+        """
+        self._mpi_dtype = value
 
     def qc_matrix_load(self):
         """
