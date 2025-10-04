@@ -7,6 +7,7 @@ try:
     import cupy
 except ImportError:
     print("WARN: cupy no está instalado, las simulaciones van a correr en CPU")
+    import numpy as cupy
 except Exception:
     raise
 
@@ -25,11 +26,25 @@ class simuAbstracto(ABC):
         :param qc: circuito a simular
         :type qc: qk.QuantumCircuit
         """
+        self.cupy_enabled = False
+        if self.cupy_installed() and self.validate_cupy():
+            #self.backend = aer.AerSimulator(method="statevector_gpu")
+            #The qiskit-aer and qiskit-aer-gpu are mutually exclusive packages. They contain the same code except that the qiskit-aer-gpu package built with CUDA support enabled
+            self.backend = aer.AerSimulator(method="statevector")
+            self.cupy_enabled = True
+        else:
+            # print("WARN: ") ya sabe
+            pass
         self.qc = qc
+        print(f"INFO: Simulador creado: {self.qc.name}")
         self.num_qubits = self.qc.num_qubits
-        self.qc_matrix = None
-        self.instate_matrix = None
-        self.outstate_matrix = None
+        print(f"INFO: Qbits  {self.num_qubits}")
+
+        # inicializamos las matrices
+        self.cupy_dtype=cupy.complex128 #TODO: ver otros tipitos
+        self.qc_matrix=None
+        self.instate_matrix=None
+        self.outstate_matrix=None
 
     @abstractmethod
     def qc_matrix_load(self):
@@ -77,24 +92,7 @@ class simuGPU(simuAbstracto):
         :param qc: circuito a simualr
         :type qc: qk.QuantumCircuit
         """
-        self.cupy_enabled = False
-        if self.cupy_installed() and self.validate_cupy():
-            #self.backend = aer.AerSimulator(method="statevector_gpu")
-            #The qiskit-aer and qiskit-aer-gpu are mutually exclusive packages. They contain the same code except that the qiskit-aer-gpu package built with CUDA support enabled
-            self.backend = aer.AerSimulator(method="statevector")
-            self.cupy_enabled = True
-
-        self.qc = qc
-        print(f"INFO: Simulador creado: {self.qc.name}")
-        self.num_qubits = self.qc.num_qubits
-        print(f"INFO: Qbits  {self.num_qubits}")
-
-        # inicializamos las matrices
-        self.cupy_dtype=cupy.complex128 #TODO: ver otros tipitos
-        self.qc_matrix=None
-        self.instate_matrix=None
-        self.outstate_matrix=None
-        pass
+        super().__init__(qc)
 
     def validate_cupy(self):
         """
@@ -263,7 +261,8 @@ class simuGPUbajo(simuGPU):
         :param qc: circuito a simular
         :type qc: qk.QuantumCircuit
         """
-        raise NotImplementedError()
+        super().__init__(qc)
+        raise NotImplementedError("simuGPUbajo no está implementado todavía")
 
     def validate_cupy(self):
         """
