@@ -174,6 +174,65 @@ class simuGPU(simuAbstracto):
         :type qc: qk.QuantumCircuit
         """
         super().__init__(qc)
+        self._GPUtopology = None  # atributo privado para topología GPU
+
+    @property
+    def GPUtopology(self):
+        """
+        Getter: configuración  GPU (grids, bloques, threads)
+
+        :return: dict con configuración de topología GPU
+        :rtype: dict or None
+        """
+        return self._GPUtopology
+
+    @GPUtopology.setter
+    def GPUtopology(self, configuration):
+        """
+        Setter: Asigna la configuración de topología GPU
+
+        :param configuration: Diccionario con configuración de topología (grids, bloques, etc)
+        :type configuration: dict
+        """
+        self._GPUtopology = None
+        topologyTemplate = {"grids":None,
+                        "blocks":None,
+                        "threads":None}
+        try:
+            if not isinstance(configuration, dict):
+                msg=f"GPUtopologia debe ser un diccionario, con 'matrix' como clave, opcionalmente puede tener {list(topologyTemplate.keys())}"
+                print(f"ERROR: {msg}")
+                raise ValueError(msg)
+            if not "matrix" in configuration.keys() or not isinstance(configuration["matrix"], cupy.ndarray):
+                msg=f"valor 'matrix' debe estar y ser {cupy.ndarray.__name__}"
+                print(f"ERROR: {msg}")
+                raise ValueError(msg)
+            if len(configuration["matrix"].shape) != 2:
+                msg=f"matriz no es 2D: {configuration["matrix"].shape}"
+                print(f"ERROR: {msg}")
+                raise ValueError(msg)
+            # todo: validar value["matrix"] comu matrix unitaria y la mar en coche de Schreadinger y su gato del orto
+            # todo: avisar q ignoramos "grids","blocks","threads"
+        except ValueError as e:
+            self._GPUtopologia = None #si, otra vez
+        except Exception:
+            raise #rompé pepe
+        else:
+            # fecpeto-coorecto
+            self._GPUtopology = dict(topologyTemplate, **configuration)
+
+        if self._GPUtopology is not None:
+            del configuration
+            configuration=dict()
+            with cupy.cuda.Device(0): #todo: soporte multi-device
+                configuration["grids"]=cupy.cuda.runtime.getDeviceProperties(0)["multiProcessorCount"]
+                configuration["blocks"]=cupy.cuda.runtime.getDeviceProperties(0)["maxThreadsPerBlock"]
+                configuration["threads"]=cupy.cuda.runtime.getDeviceProperties(0)["maxThreadsPerMultiProcessor"]
+                configuration["max_threads"]= configuration["grids"] * configuration["blocks"] * configuration["threads"]
+                configuration["compute_capability"]=cupy.cuda.Device().compute_capability
+
+            # sale con fritas
+            self._GPUtopology = dict(self._GPUtopology, **configuration)
 
 
     def qc_matrix_load(self):
@@ -245,12 +304,13 @@ class simuGPU(simuAbstracto):
         :return: Boolean cálculo salió bien
         :rtype: bool
         """
+        from cupyx import jit
         # TODO: validar self.instate_matrix, self.qc_matrix y la mar en coche
         result=False #no-OK
         try:
             params = {"out": None}
-            self.outstate_matrix = cupy.asnumpy(cupy.matmul(self.qc_matrix,self.instate_matrix), #perdón Guido
-                                            **params)
+            self.outstate_matrix = cupy.asnumpy(cupy.matmul(self.qc_matrix,self.instate_matrix), **params)
+
             print(f"INFO: estado de salida OK")
             print(f"DEBUG: estado de salida: {self.outstate_matrix}")
             result=True #VAMOOOO' lo' pibeeeeee'
@@ -262,8 +322,8 @@ class simuGPU(simuAbstracto):
 
 class simuGPUbajo(simuGPU):
     """
-    TODO: implementar métodos con GPU bajo nivel
-    Todos los métodos dan NotImplementedError.
+    Simulador cuántico con en GPU utilizando CuPy.
+
     """
 
     def __init__(self, qc: qk.QuantumCircuit):
@@ -274,54 +334,137 @@ class simuGPUbajo(simuGPU):
         :type qc: qk.QuantumCircuit
         """
         super().__init__(qc)
-        raise NotImplementedError("simuGPUbajo no está implementado todavía")
 
     def validate_cupy(self):
         """
         Valida biblioteca CuPy, ejecuta una prueba simple, y realiza un benchmark liviano.
+        wrapper de método de la clase ancestra
 
         :return: True sii CuPy está funcionando
         :rtype: bool
         """
-        raise NotImplementedError()
+        result = super().validate_cupy()#*args,**kwargs) ##siga-siga
+        return result
 
     def cupy_installed(self):
         """
         Verifica si CuPy está instalado
+        wrapper de método de la clase ancestra
 
         :return: True sii CuPy está disponible
         :rtype: bool
         """
-        raise NotImplementedError()
+        result = super().validate_cupy()  # *args,**kwargs) ##siga-siga
+        return result
 
     def qc_matrix_load(self):
         """
         Carga la matriz del circuito.
+        wrapper de método de la clase ancestra
 
         :return: True si la carga fue exitosa
         :rtype: bool
         """
-        raise NotImplementedError()
+        result = super().qc_matrix_load() ##siga-siga
+        return result
+
 
     def instate_matrix_load(self, todos_ceros=True):
         """
         Carga la matriz del estado inicial del sistema cuántico.
+        wrapper de método de la clase ancestra
 
         :param todos_ceros: Si el estado inicial debe ser |0...0>
         :type todos_ceros: bool
         :return: True si la carga fue exitosa
         :rtype: bool
         """
-        raise NotImplementedError()
+        result = super().instate_matrix_load()#*args,**kwargs) ##siga-siga
+        return result
+
 
     def outstate_calculate(self):
         """
-        Calcula la matriz del estado de salida
+        Calcula la matriz del estado de salida.
+        A diferencia de la clase ancestra implemente matmul a bajo nivel
+
 
         :return: Boolean cálculo salió bien
         :rtype: bool
         """
-        raise NotImplementedError()
+        # raise NotImplementedError()
+        result = False
+        try:
+            if self.qc_matrix is None or self.instate_matrix is None:
+                msg=f"deben cargarse antes qc_matrix Y  instate_matrix"
+                raise ValueError(msg)
+            self.GPUtopology = {"matrix":self.qc_matrix} #armo grids/bloques todo: stub
+            if not self.GPUtopology is None:
+                pass # TODO: ver qué hacemos si la dimension falla
+
+            #if qc_matrix_dims[0] != instate_matrix_dims[1]:
+            #    raise ValueError(f"ERROR: dimensiones de la matriz del circuito y del estado inicial no coinciden: {qc_matrix_dims} != {instate_matrix_dims}")
+            #params = {"out": None}
+            #self.outstate_matrix = cupy.asnumpy(cupy.matmul(self.qc_matrix, self.instate_matrix), **params)
+
+            from cupyx import jit
+            @jit.rawkernel()
+            def complex_matmul(qc_real, qc_imag, instate_real, instate_imag, outstate_real, outstate_imag, rows):
+                row = jit.blockIdx.x * jit.blockDim.x + jit.threadIdx.x
+
+                if row < rows:
+                    real_sum = 0.0
+                    imag_sum = 0.0
+
+                    for col in range(rows):
+                        # arreglos separados real/imag
+                        u_idx = row * rows + col
+                        ur = qc_real[u_idx]
+                        ui = qc_imag[u_idx]
+                        sr = instate_real[col]
+                        si = instate_imag[col]
+
+                        # multiplicaión de complejos (ur + ui*j)(sr + si*j)
+                        real_sum += ur * sr - ui * si
+                        imag_sum += ur * si + ui * sr
+
+                    outstate_real[row] = real_sum
+                    outstate_imag[row] = imag_sum
+
+            def unitary_by_state(unitary, state):
+                rows = state.shape[0]
+                state_out = cupy.empty(rows, dtype=cupy.complex128)
+
+                threads = 256
+                blocks = (rows + threads - 1) // threads
+
+                u_real = cupy.ascontiguousarray(unitary.real.ravel(), dtype=cupy.float64)
+                u_imag = cupy.ascontiguousarray(unitary.imag.ravel(), dtype=cupy.float64)
+                s_real = cupy.ascontiguousarray(state.real, dtype=cupy.float64)
+                s_imag = cupy.ascontiguousarray(state.imag, dtype=cupy.float64)
+                out_real = cupy.empty(rows, dtype=cupy.float64)
+                out_imag = cupy.empty(rows, dtype=cupy.float64)
+
+                # compatilidad CUDA kernel
+                complex_matmul((cupy.uint32(blocks),), (cupy.uint32(threads),),
+                               (u_real, u_imag, s_real, s_imag, out_real, out_imag, cupy.uint32(rows)))
+
+                # rearmamos el estado de salida
+                state_out.real[:] = out_real
+                state_out.imag[:] = out_imag
+                return state_out
+            self.outstate_matrix = unitary_by_state(self.qc_matrix, self.instate_matrix.ravel())
+
+            print(f"INFO: estado de salida OK")
+            print(f"DEBUG: estado de salida: {self.outstate_matrix}")
+            result = True
+        except ValueError as e:
+            print(f"ERROR: {e}")
+            result = False #no-OK
+        except Exception as e:
+            result = False #no-OK igual rompemos todo
+            raise e
+        return result #OK/no-OK
 
 
 class simuMPI(simuAbstracto):
