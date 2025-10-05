@@ -13,7 +13,7 @@ import mpi4py
 from  mpi4py import MPI
 
 # globales (perdón Niklaus)
-num_qubits = 5#3#5  # número de qubits a simular
+num_qubits = 5#3#5#2  # número de qubits a simular TODO: tomar como argumento
 corridas = 30  # corridas del Aer de benchmark
 
 def producto(vector1: cp33simu.cupy.array, vector2:cp33simu.cupy.array, fila):
@@ -38,17 +38,17 @@ def producto(vector1: cp33simu.cupy.array, vector2:cp33simu.cupy.array, fila):
     return result
 
 if __name__ == '__main__':
-    qc1 = qk.QuantumCircuit(num_qubits, 0)
-    qc1.h(range(num_qubits)) # preparo |+...+>
-    comm = MPI.COMM_WORLD
-    rank = comm.Get_rank()
-    simu = cp33simu.simuMPI(qc=qc1) # lo necesito acá para compartir dtype,etc
 
     if MPI.COMM_WORLD.Get_size() !=1 and MPI.COMM_WORLD.Get_size() != 2**num_qubits: #es 1 cunado debugueamos
         raise ValueError(f"""
 los procesos deben ser de 2 elevado la cantidad de qubits. Para num_qubits={num_qubits} Correr:
 mpiexec -n {2**num_qubits} python -m mpi4py simuMPI_test.py
                          """)
+    qc1 = qk.QuantumCircuit(num_qubits, 0)
+    qc1.h(range(num_qubits)) # preparo |+...+>
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+    simu = cp33simu.simuMPI(qc=qc1) # lo necesito acá para compartir dtype,etc
 
     if rank == 0:
         # saca la matriz desde qiskit
@@ -114,4 +114,10 @@ mpiexec -n {2**num_qubits} python -m mpi4py simuMPI_test.py
         comm.send(result, dest=0, tag=3)
 
     if rank == 0:
-        print(f"INFO:  Outstate: {outstate}")
+        # si llegamos hasta acá, nos ganamos un lugar con Gardel y Lepera :D
+        # sacamos el estado por pantalla
+        print(f"DEBUG:  simuPMI.utstate: {outstate}")
+        print(f"\nINFO: Estado de salida - amplitud de probabilidad de los {2**num_qubits}   posibles estados::")
+        for i, amp_proba in enumerate(outstate):#cp33simu.cupy.asnumpy(outstate)):
+            estado_bin = format(i, f'0{num_qubits}b') # bin
+            print(f"|{estado_bin}>: {amp_proba.real:.5f}") #ya era real,pero molesta el j0.00000...
