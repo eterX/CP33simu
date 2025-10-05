@@ -360,7 +360,7 @@ class simuMPI(simuAbstracto):
         if self._mpi_dtype is None:
             # TODO: implementar mapeo completo para otros tipos
             if self.cupy_dtype == cupy.complex128:
-                self._mpi_dtype = MPI.COMPLEX
+                self._mpi_dtype = MPI.COMPLEX16
             else:
                 raise NotImplementedError(f"Mapeo MPI para {self.cupy_dtype} no implementado")
         return self._mpi_dtype
@@ -382,22 +382,61 @@ class simuMPI(simuAbstracto):
         :return: True si la carga fue exitosa, False en caso contrario
         :rtype: bool
         """
-        # TODO: implementar carga distribuida
-        print("INFO: qc_matrix_load() - stub MPI")
-        raise NotImplementedError()
+        result = False # no-OK
+        if self.qc_matrix is not None:
+            print("ERROR: Matriz ya cargada. Para recargar, 'qc_matrix=None' y luego ejecutar 'qc_matrix_load()'")
+        else:
+            try:
+                # https://docs.cupy.dev/en/stable/reference/generated/cupy.array.html#cupy.array
+                params={'dtype':self.cupy_dtype}
+                self.qc_matrix=cupy.array(qk.quantum_info.Operator.from_circuit(self.qc),
+                                            **params)
+                result = True
+            except Exception as e:
+                print(f"ERROR: Fallo al cargar la matriz del circuito: {e}")
+            print(f"INFO: Estado inicial cargado: {self.qc_matrix}")
+        return result
+
+
+
 
     def instate_matrix_load(self, todos_ceros=True):
         """
-        Carga el estado inicial distribuido entre los procesos MPI.
+        Carga el estado inicial para distribuir entre los procesos MPI.
 
-        :param todos_ceros: Si el estado inicial debe ser |0...0>
+        :param todos_ceros: estado inicial |0...0>.  Default a True
         :type todos_ceros: bool
-        :return: True si la carga fue exitosa, False en caso contrario
+        :return: carga OK
         :rtype: bool
         """
-        # TODO: implementar carga de estado inicial distribuido
-        print("INFO: instate_matrix_load() - stub MPI")
-        raise NotImplementedError()
+        result = False # no-OK
+        if self.instate_matrix is not None:
+            raise ValueError("ERROR: Matriz ya cargada. Para recargar, 'in_state_matrix=None' y luego ejecutar 'in_state_matrix_load()'")
+        elif not todos_ceros:
+            raise NotImplementedError("ERR: estado inicial distinto de |0...0> no implementado")
+
+        try:
+            # creamos el estado inicial
+            #https://docs.cupy.dev/en/stable/reference/linalg.html
+            #
+            params={'dtype':self.cupy_dtype}
+            self.instate_matrix = cupy.asarray([[1], [0]],
+                                    **params)
+            if self.num_qubits > 1:
+                ket_cero = cupy.asarray([[1], [0]],
+                                        **params)
+                for _ in range(1,self.num_qubits):
+                    # aplicamos https://docs.cupy.dev/en/stable/reference/generated/cupy.kron.html#cupy.kron
+                    self.instate_matrix = cupy.kron(self.instate_matrix,ket_cero)
+            else:
+                print(f"WARN: para 1 qb, te vendo una HP48... baratita, baratita. Llamá 54-2600-HP48")
+            params={'dtype':self.cupy_dtype}
+            result = True
+        except Exception as e:
+            print(f"ERROR: Fallo al cargar  el estado inicial: {e}")
+        print(f"INFO: Estado inicial cargado")
+        print(f"DEBUG: Estado inicial: {self.instate_matrix}")
+        return result #errorlevel
 
     def outstate_calculate(self):
         """
