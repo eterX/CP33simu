@@ -184,6 +184,7 @@ class simuGPU(simuAbstracto):
         :return: dict con configuración de topología GPU
         :rtype: dict or None
         """
+        print(f"WARN: {type(self)}.GPUtopology es stub")
         return self._GPUtopology
 
     @GPUtopology.setter
@@ -230,6 +231,9 @@ class simuGPU(simuAbstracto):
                 configuration["threads"]=cupy.cuda.runtime.getDeviceProperties(0)["maxThreadsPerMultiProcessor"]
                 configuration["max_threads"]= configuration["grids"] * configuration["blocks"] * configuration["threads"]
                 configuration["compute_capability"]=cupy.cuda.Device().compute_capability
+
+            configuration["threads"] = 256# TODO: esto es harcodeado
+            # https://docs.cupy.dev/en/stable/reference/generated/cupy.cuda.Device.html#cupy.cuda.Device.compute_capability
 
             # sale con fritas
             self._GPUtopology = dict(self._GPUtopology, **configuration)
@@ -334,6 +338,9 @@ class simuGPUbajo(simuGPU):
         :type qc: qk.QuantumCircuit
         """
         super().__init__(qc)
+        from cupyx import jit
+        self.jit = jit # serializate ésta, pickle :D
+        print(f"INFO: Simulador GPU bajo creado: {self.qc.name} - Qbits  {self.num_qubits}")
 
     def validate_cupy(self):
         """
@@ -401,16 +408,31 @@ class simuGPUbajo(simuGPU):
             self.GPUtopology = {"matrix":self.qc_matrix} #armo grids/bloques todo: stub
             if not self.GPUtopology is None:
                 pass # TODO: ver qué hacemos si la dimension falla
-
             #if qc_matrix_dims[0] != instate_matrix_dims[1]:
             #    raise ValueError(f"ERROR: dimensiones de la matriz del circuito y del estado inicial no coinciden: {qc_matrix_dims} != {instate_matrix_dims}")
             #params = {"out": None}
             #self.outstate_matrix = cupy.asnumpy(cupy.matmul(self.qc_matrix, self.instate_matrix), **params)
 
-            from cupyx import jit
-            @jit.rawkernel()
+            # Implementación con kernel de bajo nivel - "artesanal"
+
+            @self.jit.rawkernel()
             def complex_matmul(qc_real, qc_imag, instate_real, instate_imag, outstate_real, outstate_imag, rows):
-                row = jit.blockIdx.x * jit.blockDim.x + jit.threadIdx.x
+                """
+                reimplementación de cupy.matmul() a bajo nivel.
+
+                :param qc_real: 1D "row-major"
+                :param qc_imag: 1D "row-major"
+                :param instate_real: estado de entrada, parte real fila (no columna)
+                :param instate_imag: estado de entrada, parte real fila (no columna)
+                :param outstate_real: estado de salida, parte real fila (no columna), por referencia (se seobreescribe)
+                :param outstate_imag: estado de salida, parte imag fila (no columna), por referencia (se seobreescribe)
+                :param rows: lado de qc_matrix
+                """
+                result = False
+                row = self.jit.blockIdx.x * self.jit.blockDim.x + self.jit.threadIdx.x
+
+                if rows > self.GPUtopology["max_threads"]:
+                    pass  #TODO: verificar q entra en la memoria ppal (o lo hacemos en el setter de GPUtopology?)
 
                 if row < rows:
                     real_sum = 0.0
@@ -430,33 +452,40 @@ class simuGPUbajo(simuGPU):
 
                     outstate_real[row] = real_sum
                     outstate_imag[row] = imag_sum
+                    result = True #TODO: ver errorlevel con jit
 
-            def unitary_by_state(unitary, state):
-                rows = state.shape[0]
-                state_out = cupy.empty(rows, dtype=cupy.complex128)
+            # def unitary_by_state(unitary, state): no andubo. prepara datos \\
+            # para el kernel cupy.ravel() https://docs.cupy.dev/en/stable/reference/generated/cupy.ravel.html
+            state = self.instate_matrix.ravel()
+            rows = state.shape[0]
 
-                threads = 256
-                blocks = (rows + threads - 1) // threads
+            threads = self.GPUtopology["threads"] # era 256 hardodeado, igual OJO q GPUotpology es stub
+            blocks = (rows + threads - 1) // threads # TODO: comparar con self.GPUtopology["blocks"]
 
-                u_real = cupy.ascontiguousarray(unitary.real.ravel(), dtype=cupy.float64)
-                u_imag = cupy.ascontiguousarray(unitary.imag.ravel(), dtype=cupy.float64)
-                s_real = cupy.ascontiguousarray(state.real, dtype=cupy.float64)
-                s_imag = cupy.ascontiguousarray(state.imag, dtype=cupy.float64)
-                out_real = cupy.empty(rows, dtype=cupy.float64)
-                out_imag = cupy.empty(rows, dtype=cupy.float64)
+            # separamos real/imaginario pero evitando ascontiguousarray, que no hubo forma
+            u_real = self.qc_matrix.real.ravel()
+            u_imag = self.qc_matrix.imag.ravel()
+            s_real = state.real
+            s_imag = state.imag
 
-                # compatilidad CUDA kernel
-                complex_matmul((cupy.uint32(blocks),), (cupy.uint32(threads),),
-                               (u_real, u_imag, s_real, s_imag, out_real, out_imag, cupy.uint32(rows)))
+            out_real = cupy.empty(rows, dtype=cupy.float64) #COMPLEX128**(-2)
+            out_imag = cupy.empty(rows, dtype=cupy.float64)
 
-                # rearmamos el estado de salida
-                state_out.real[:] = out_real
-                state_out.imag[:] = out_imag
-                return state_out
-            self.outstate_matrix = unitary_by_state(self.qc_matrix, self.instate_matrix.ravel())
+            # a ver si pegamos los tipos de dato q cuda entiende
+            complex_matmul((cupy.uint32(blocks),), #ojo el casteo, timoteo
+                           (cupy.uint32(threads),),
+                           (u_real, u_imag, s_real, #ojo el casteo, timoteo
+                            s_imag, out_real, out_imag, cupy.uint32(rows)))
 
-            print(f"INFO: estado de salida OK")
+            # volvemos a juntar
+            self.outstate_matrix = cupy.asnumpy(out_real + 1j * out_imag)
+
+            print(f"INFO: estado de salida OK (kernel CUDA bajo nivel)")
             print(f"DEBUG: estado de salida: {self.outstate_matrix}")
+            print(f"\nINFO: estado de salida - amplitud de probabilidad de los {2 ** self.num_qubits} posibles estados:")
+            for i, amp_proba in enumerate(self.outstate_matrix):  # cp33simu.cupy.asnumpy(outstate)):
+                estado_bin = format(i, f'0{self.num_qubits}b')  # bin
+                print(f"|{estado_bin}>: {amp_proba.real:.3f} + i{amp_proba.imag:.3f}")  # ya era real,pero molesta el j0.00000...
             result = True
         except ValueError as e:
             print(f"ERROR: {e}")
