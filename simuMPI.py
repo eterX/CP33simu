@@ -120,4 +120,4 @@ mpiexec -n {2**num_qubits} python -m mpi4py simuMPI_test.py
         print(f"\nINFO: Estado de salida - amplitud de probabilidad de los {2**num_qubits}   posibles estados::")
         for i, amp_proba in enumerate(outstate):#cp33simu.cupy.asnumpy(outstate)):
             estado_bin = format(i, f'0{num_qubits}b') # bin
-            print(f"|{estado_bin}>: {amp_proba.real:.5f}") #ya era real,pero molesta el j0.00000...
+            print(f"|{estado_bin}>: {amp_proba.real:.3f} +i{amp_proba.imag:.3f}") #arreglo la BURRADA de la probabiliddad. Perdón Max
