@@ -48,7 +48,8 @@ mpiexec -n {2**num_qubits} python -m mpi4py simuMPI_test.py
     qc1.h(range(num_qubits)) # preparo |+...+>
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
-    simu = cp33simu.simuMPI(qc=qc1) # lo necesito acá para compartir dtype,etc
+    benchmarkDict =  {"qiskit-aer":False, "simuMPI":True, "simuGPU":True, "simuGPUbajo":True} # copio benchmarks_requeridos de main.ipynb
+    simu = cp33simu.simuMPI(qc=qc1,benchmark=benchmarkDict) # lo necesito acá para compartir dtype,etc
 
     if rank == 0:
         # saca la matriz desde qiskit
@@ -85,6 +86,10 @@ mpiexec -n {2**num_qubits} python -m mpi4py simuMPI_test.py
     # largamos el equivalente a simu.outstate_calculate()
     # es una matmul roñosa... perdón Alkarismi pero vamos a reutilizar el ejericio mpi_matrix
     if rank == 0:
+        if simu.benchmark is not None:
+            import time
+            start = time.perf_counter()
+
         outstate = cp33simu.cupy.empty(2**num_qubits, dtype=simu.cupy_dtype)
         # Rank 0 calcula su propia fila (fila 0) localmente
         outstate[0] = producto(simu.qc_matrix[0], simu.instate_matrix, 0)
@@ -114,10 +119,16 @@ mpiexec -n {2**num_qubits} python -m mpi4py simuMPI_test.py
         comm.send(result, dest=0, tag=3)
 
     if rank == 0:
+        if simu.benchmark is not None:
+            end = time.perf_counter()
+            elapsed_ms = (end - start) * 1000
+            print(f"INFO: Benchmark completado en {elapsed_ms:.2f} ms")
+            simu.benchmark.update({"walltime": elapsed_ms})
+            print(f"DEBUG: simu.benchmark: {simu.benchmark}")
         # si llegamos hasta acá, nos ganamos un lugar con Gardel y Lepera :D
         # sacamos el estado por pantalla
         print(f"DEBUG:  simuPMI.utstate: {outstate}")
         print(f"\nINFO: Estado de salida - amplitud de probabilidad de los {2**num_qubits}   posibles estados::")
         for i, amp_proba in enumerate(outstate):#cp33simu.cupy.asnumpy(outstate)):
             estado_bin = format(i, f'0{num_qubits}b') # bin
-            print(f"|{estado_bin}>: {amp_proba.real:.3f} +i{amp_proba.imag:.3f}") #arreglo la BURRADA de la probabiliddad. Perdón Max
+            print(f"|{estado_bin}>: {amp_proba.real:.3f} +i{amp_proba.imag:.3f}")
