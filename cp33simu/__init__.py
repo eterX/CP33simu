@@ -179,14 +179,21 @@ class simuGPU(simuAbstracto):
     #
     #
     #
-    def __init__(self,qc: qk.QuantumCircuit):
+    def __init__(self,qc: qk.QuantumCircuit, *args, benchmark: dict = None, **kwargs):
         """
         Inicializa el simulador con un circuito cuántico ingresado
 
-        :param qc: circuito a simualr
+        :param qc: circuito a simualr clase qiskit.QuantumCircuit
+        :param benchmark: diccionario con los resultados del benchmark. None para desactivar
         :type qc: qk.QuantumCircuit
         """
-        super().__init__(qc)
+        super().__init__(qc,*args,benchmark=benchmark,**kwargs)
+        if isinstance(self.benchmark, dict):
+                _ = {"clase": "simuGPU",
+                "walltime": None}
+                self.benchmark.update(_)
+                # TODO: si "guardarJson"==True, guarda el dict benchmark a disco en json. para importar desde el notebook
+
         self._GPUtopology = None  # atributo privado para topología GPU
 
     @property
@@ -321,12 +328,20 @@ class simuGPU(simuAbstracto):
         :return: Boolean cálculo salió bien
         :rtype: bool
         """
-        from cupyx import jit
+        #from cupyx import jit
         # TODO: validar self.instate_matrix, self.qc_matrix y la mar en coche
         result=False #no-OK
         try:
             params = {"out": None}
-            self.outstate_matrix = cupy.asnumpy(cupy.matmul(self.qc_matrix,self.instate_matrix), **params)
+            if self.benchmark is not None:
+                import time
+                start = time.perf_counter()
+            self.outstate_matrix = cupy.asnumpy(cupy.matmul(self.qc_matrix, self.instate_matrix), **params)
+            if self.benchmark is not None:
+                end = time.perf_counter()
+                elapsed_ms = (end - start) * 1000
+                print(f"INFO: Benchmark completado en {elapsed_ms:.2f} ms")
+                self.benchmark["walltime"] = elapsed_ms
 
             print(f"INFO: estado de salida OK")
             print(f"DEBUG: estado de salida: {self.outstate_matrix}")
@@ -343,14 +358,21 @@ class simuGPUbajo(simuGPU):
 
     """
 
-    def __init__(self, qc: qk.QuantumCircuit):
+    def __init__(self, qc: qk.QuantumCircuit, *args, benchmark: dict = None, **kwargs):
         """
         Inicializa el simulador con un circuito cuántico ingresado
 
         :param qc: circuito a simular
+        :param benchmark: diccionario con los resultados del benchmark. None para desactivar
         :type qc: qk.QuantumCircuit
         """
-        super().__init__(qc)
+        super().__init__(qc, *args, benchmark=benchmark, **kwargs)
+        if isinstance(self.benchmark, dict):
+                _ = {"clase": "simuGPUbajo",
+                "walltime": None}
+                self.benchmark.update(_)
+                # TODO: si "guardarJson"==True, guarda el dict benchmark a disco en json. para importar desde el notebook
+
         from cupyx import jit
         self.jit = jit # serializate ésta, pickle :D
         print(f"INFO: Simulador GPU bajo creado: {self.qc.name} - Qbits  {self.num_qubits}")
@@ -466,6 +488,9 @@ class simuGPUbajo(simuGPU):
                     outstate_real[row] = real_sum
                     outstate_imag[row] = imag_sum
                     result = True #TODO: ver errorlevel con jit
+            if self.benchmark is not None:
+                import time
+                start = time.perf_counter()
 
             # def unitary_by_state(unitary, state): no andubo. prepara datos \\
             # para el kernel cupy.ravel() https://docs.cupy.dev/en/stable/reference/generated/cupy.ravel.html
@@ -492,6 +517,11 @@ class simuGPUbajo(simuGPU):
 
             # volvemos a juntar
             self.outstate_matrix = cupy.asnumpy(out_real + 1j * out_imag)
+            if self.benchmark is not None:
+                end = time.perf_counter()
+                elapsed_ms = (end - start) * 1000
+                print(f"INFO: Benchmark completado en {elapsed_ms:.2f} ms")
+                self.benchmark["walltime"] = elapsed_ms
 
             print(f"INFO: estado de salida OK (kernel CUDA bajo nivel)")
             print(f"DEBUG: estado de salida: {self.outstate_matrix}")
