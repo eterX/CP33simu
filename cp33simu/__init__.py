@@ -28,14 +28,27 @@ class simuAbstracto(ABC):
     Clase base, interfaz que todos los simuladores
     """
 
-    def __init__(self, qc: qk.QuantumCircuit):
+    def __init__(self, qc: qk.QuantumCircuit, benchmark: dict=None):
         """
         Inicializa el simulador con un circuito cuántico
 
         :param qc: circuito a simular
+        :param benchmark: diccionario con los resultados del benchmark. None para desactivar
         :type qc: qk.QuantumCircuit
         """
         self.cupy_enabled = False
+        self.benchmark=benchmark
+        if self.benchmark is not None:
+            if isinstance(self.benchmark,dict):
+                _={"clase":None,
+                 "circuito":qc.name,
+                 "num_qubits":qc.num_qubits,
+                 "walltime":0}
+                self.benchmark.update(_)
+                # TODO: si "guardarJson"==True, guarda el dict benchmark a disco en json. para importar desde el notebook
+            else:
+                raise ValueError("ERROR: benchmark debe ser un diccionario")
+
         if self.cupy_installed() and self.validate_cupy():
             #self.backend = aer.AerSimulator(method="statevector_gpu")
             #The qiskit-aer and qiskit-aer-gpu are mutually exclusive packages. They contain the same code except that the qiskit-aer-gpu package built with CUDA support enabled
@@ -502,14 +515,26 @@ class simuMPI(simuAbstracto):
     Implementación para la Sección 3 del proyecto.
     """
 
-    def __init__(self, qc: qk.QuantumCircuit):
+    def __init__(self, qc: qk.QuantumCircuit, *args, benchmark:dict=None, **kwargs):
         """
         Inicializa el simulador MPI con un circuito cuántico
 
         :param qc: circuito a simular
         :type qc: qk.QuantumCircuit
+        :param benchmark: diccionario con los resultados del benchmark
         """
-        super().__init__(qc)
+        super().__init__(qc, *args, benchmark=benchmark, **kwargs)
+        if isinstance(self.benchmark,dict):
+            if "simuMPI" in self.benchmark.keys() and self.benchmark["simuMPI"]==True:
+                _={"clase":"simuMPI",
+                 "walltime":0}
+                self.benchmark.update(_)
+                print("INFO: hablito benchmarking")
+            else:
+                print("INFO: deshablito benchmarking")
+        else:
+            self.benchmark=None #por las dudas
+
         if not "mpi4py" in globals():
             raise ImportError("ERROR: no se encuentra mpi4py. ver https://mpi4py.readthedocs.io/en/stable/install.html")
         print(f"INFO: Simulador MPI creado: {self.qc.name}")
